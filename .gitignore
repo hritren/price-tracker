@@ -1,10 +1,11 @@
 ### General ###
 HELP.md
+**/src/main/resources/application.properties
+logs/application.log
 
 ### Maven ###
 target/
 !.mvn/wrapper/maven-wrapper.jar
-**/src/main/resources/application.properties
 
 ### Build Artifacts ###
 build/
@@ -16,6 +17,3 @@ build/
 *.iws
 *.iml
 *.ipr
-
-### VS Code ###
-.vscode/

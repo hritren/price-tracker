@@ -3,14 +3,13 @@ package price.tracker.coingecko.client;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
+import price.tracker.coingecko.client.exception.CoinGeckoClientException;
 import price.tracker.coingecko.dto.CryptoCurrencyDTO;
 
 import java.util.ArrayList;
@@ -27,25 +26,29 @@ public class CoinGeckoClient {
     private final JdbcTemplate jdbcTemplate;
 
     public void getRealTimeCryptoData() {
-        HttpEntity<String> entity = new HttpEntity<>(getHeaders());
-        ResponseEntity<String> response = restTemplate.exchange(COINGECKO_REAL_TIME_ENDPOINT, HttpMethod.GET, entity, String.class);
-
-        List<CryptoCurrencyDTO> cryptoCurrencyDTOs = createCryptoCurrencyDTO(response.getBody());
-        saveCryptoCurrencyBatch(cryptoCurrencyDTOs);
-    }
-
-    public List<CryptoCurrencyDTO> createCryptoCurrencyDTO(String body) {
-
-        ObjectMapper objectMapper = new ObjectMapper();
         try {
-            return objectMapper.readValue(body, new TypeReference<List<CryptoCurrencyDTO>>(){});
+            HttpEntity<String> entity = new HttpEntity<>(getHeaders());
+            ResponseEntity<String> response = restTemplate.exchange(COINGECKO_REAL_TIME_ENDPOINT, HttpMethod.GET, entity, String.class);
+
+            List<CryptoCurrencyDTO> cryptoCurrencyDTOs = createCryptoCurrencyDTO(response.getBody());
+            saveCryptoCurrencyBatch(cryptoCurrencyDTOs);
         } catch (Exception e) {
-            e.printStackTrace();
-            return null;
+            throw new CoinGeckoClientException("An error occurred calling the calling the coingecko API", e);
         }
     }
 
-    public void saveCryptoCurrencyBatch(List<CryptoCurrencyDTO> cryptoCurrencyList) {
+    private List<CryptoCurrencyDTO> createCryptoCurrencyDTO(String body) {
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        try {
+            return objectMapper.readValue(body, new TypeReference<List<CryptoCurrencyDTO>>() {
+            });
+        } catch (Exception e) {
+            throw new CoinGeckoClientException("An error occurred parsing the response", e);
+        }
+    }
+
+    private void saveCryptoCurrencyBatch(List<CryptoCurrencyDTO> cryptoCurrencyList) {
         String sql = "INSERT INTO CRYPTO_CURRENCY (crypto_id, name, symbol, price) " +
                 "VALUES (?, ?, ?, ?) " +
                 "ON DUPLICATE KEY UPDATE " +
@@ -56,15 +59,12 @@ public class CoinGeckoClient {
         List<Object[]> batchArgs = new ArrayList<>();
 
         for (CryptoCurrencyDTO cryptoCurrency : cryptoCurrencyList) {
-            batchArgs.add(new Object[] {
+            batchArgs.add(new Object[]{
                     cryptoCurrency.getCryptoId(),
                     cryptoCurrency.getName(),
                     cryptoCurrency.getSymbol(),
                     cryptoCurrency.getPrice()
             });
-            if (cryptoCurrency.getCryptoId().equals("bitcoin")) {
-                System.out.println(cryptoCurrency.getPrice());
-            }
         }
 
         jdbcTemplate.batchUpdate(sql, batchArgs);

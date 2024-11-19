@@ -15,7 +15,7 @@ import static org.quartz.TriggerBuilder.newTrigger;
 @Configuration
 public class QuartzConfig {
 
-    private static final String REALTIME_CRON_EXPRESSION = "0 0/10 * * * ?";
+    private static final String REALTIME_CRON_EXPRESSION = "0 0/1 * * * ?";
 
     @Autowired
     private AutowiringSpringBeanJobFactory jobFactory;
