@@ -20,7 +20,7 @@ public class RealTimeJob extends QuartzJobBean {
     public void executeInternal(JobExecutionContext jobExecutionContext) {
         try {
 //            coinGeckoClient.getRealTimeCryptoData();
-            coinbaseClient.getAccounts();
+//            coinbaseClient.testRequest();
         } catch (CoinGeckoClientException e) {
             log.error(e.getMessage());
         } catch (Exception e) {
