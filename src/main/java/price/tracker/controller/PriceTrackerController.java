@@ -3,13 +3,12 @@ package price.tracker.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
+import price.tracker.authentiacation.JWTService;
 import price.tracker.coinbase.CoinbaseClient;
 import price.tracker.coingecko.dto.CryptoCurrencyDTO;
 import price.tracker.encryption.EncryptionService;
@@ -23,6 +22,7 @@ public class PriceTrackerController {
     private final RestTemplate restTemplate;
     private final JdbcTemplate jdbcTemplate;
     private final CoinbaseClient coinbaseClient;
+    private final JWTService jwtService;
 
     @GetMapping
     private void getPrice(@RequestParam String id) {
@@ -38,8 +38,15 @@ public class PriceTrackerController {
         coinbaseClient.createPortfolio();
     }
 
-    @PostMapping("/users")
-    private void addUser(@RequestBody UserDTO user) {
+    @PostMapping("/users/register")
+    private ResponseEntity<String> registerUser(@RequestBody UserDTO user) {
+        if (userExists(user)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body("A user with this username already exists.");
+        }
+        BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+        String hashedPassword = passwordEncoder.encode(user.getPassword());
+
         String secret = user.getCoinbaseAPIKey().getSecret();
         String encryptedSecret = secret == null ? null : encryptionService.encrypt(secret);
 
@@ -53,20 +60,87 @@ public class PriceTrackerController {
 
         Object[] batchArgs = new Object[]{
                 user.getUsername(),
-                user.getPassword(),
+                hashedPassword,
                 user.getCoinbaseAPIKey().getName(),
                 encryptedSecret
         };
 
         jdbcTemplate.update(sql, batchArgs);
+
+        int id = getIDFromDB(user);
+        String jwt = jwtService.issueJWT(id, user.getUsername());
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(jwt);
     }
 
-    public CryptoCurrencyDTO createCryptoCurrencyDTO(String body) {
+    @PostMapping("/users/login")
+    private ResponseEntity<String> login(@RequestBody UserDTO user) {
+        if (!userExists(user)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body("Wrong username or password.");
+        }
+
+        BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+
+        String hashedPasswordDB = getPasswordFromDB(user);
+        if (!passwordEncoder.matches(user.getPassword(), hashedPasswordDB)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body("Wrong username or password.");
+        }
+
+        int id = getIDFromDB(user);
+        String jwt = jwtService.issueJWT(id, user.getUsername());
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(jwt);
+    }
+
+    private boolean userExists(UserDTO user) {
+        String username = user.getUsername();
+
+        String sql = "SELECT COUNT(*) " +
+                "FROM USERS " +
+                "WHERE username = ?";
+
+        Integer userCount = jdbcTemplate.queryForObject(
+                sql,
+                Integer.class,
+                username);
+        return userCount != null && userCount > 0;
+    }
+
+    private String getPasswordFromDB(UserDTO user) {
+        String username = user.getUsername();
+
+        String sql = "SELECT password_hash " +
+                "FROM USERS " +
+                "WHERE username = ?";
+
+        return jdbcTemplate.queryForObject(
+                sql,
+                String.class,
+                username);
+    }
+
+    private Integer getIDFromDB(UserDTO user) {
+        String username = user.getUsername();
+
+        String sql = "SELECT id " +
+                "FROM USERS " +
+                "WHERE username = ?";
+
+        return jdbcTemplate.queryForObject(
+                sql,
+                Integer.class,
+                username);
+    }
+
+    private CryptoCurrencyDTO createCryptoCurrencyDTO(String body) {
 
         ObjectMapper objectMapper = new ObjectMapper();
         try {
-            CryptoCurrencyDTO cryptoCurrency = objectMapper.readValue(body, CryptoCurrencyDTO.class);
-            return cryptoCurrency;
+            return objectMapper.readValue(body, CryptoCurrencyDTO.class);
         } catch (Exception e) {
             e.printStackTrace();
             return null;
