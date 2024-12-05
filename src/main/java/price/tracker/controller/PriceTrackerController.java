@@ -1,6 +1,7 @@
 package price.tracker.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 import price.tracker.authentiacation.JWTService;
 import price.tracker.coinbase.CoinbaseClient;
+import price.tracker.coinbase.dto.CoinbaseAPIKeyDTO;
 import price.tracker.coingecko.dto.CryptoCurrencyDTO;
 import price.tracker.encryption.EncryptionService;
 
@@ -50,16 +52,18 @@ public class PriceTrackerController {
         String secret = user.getCoinbaseAPIKey().getSecret();
         String encryptedSecret = secret == null ? null : encryptionService.encrypt(secret);
 
-        String sql = "INSERT INTO USERS (username, password_hash, api_key_name, api_key_secret) " +
-                "VALUES (?, ?, ?, ?) " +
+        String sql = "INSERT INTO USERS (username, email, password_hash, api_key_name, api_key_secret) " +
+                "VALUES (?, ?, ?, ?, ?) " +
                 "ON DUPLICATE KEY UPDATE " +
                 "username = VALUES(username), " +
+                "email = VALUES(email), " +
                 "password_hash = VALUES(password_hash), " +
                 "api_key_secret = VALUES(api_key_secret), " +
                 "api_key_name = VALUES(api_key_name)";
 
         Object[] batchArgs = new Object[]{
                 user.getUsername(),
+                user.getEmail(),
                 hashedPassword,
                 user.getCoinbaseAPIKey().getName(),
                 encryptedSecret
@@ -94,6 +98,40 @@ public class PriceTrackerController {
 
         return ResponseEntity.status(HttpStatus.OK)
                 .body(jwt);
+    }
+
+    @PostMapping("/users/key")
+    private ResponseEntity<String> addKey(
+            @RequestHeader("Authorization") String authorizationHeader,
+            @RequestBody CoinbaseAPIKeyDTO apiKey) {
+
+        try {
+            String token = authorizationHeader.replace("Bearer ", "");
+            Claims claims = jwtService.validateJWT(token);
+
+            String userId = claims.getSubject();
+            String username = claims.get("username", String.class);
+
+            if (apiKey.getName() == null || apiKey.getSecret() == null) {
+                return ResponseEntity.badRequest().body("API key name and secret are required.");
+            }
+
+            String encryptedSecret = encryptionService.encrypt(apiKey.getSecret());
+
+            String sql = "UPDATE users SET api_key_name = ?, api_key_secret = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+
+            int rowsUpdated = jdbcTemplate.update(sql, apiKey.getName(), encryptedSecret, userId);
+
+            if (rowsUpdated == 0) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found.");
+            }
+
+            return ResponseEntity.ok("API key added successfully for user: " + username);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid or missing token");
+        }
     }
 
     private boolean userExists(UserDTO user) {
