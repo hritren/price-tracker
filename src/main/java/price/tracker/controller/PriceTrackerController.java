@@ -13,7 +13,11 @@ import price.tracker.authentiacation.JWTService;
 import price.tracker.coinbase.CoinbaseClient;
 import price.tracker.coinbase.dto.CoinbaseAPIKeyDTO;
 import price.tracker.coingecko.dto.CryptoCurrencyDTO;
+import price.tracker.dto.PasswordResetDTO;
+import price.tracker.dto.UserDTO;
+import price.tracker.email.EmailService;
 import price.tracker.encryption.EncryptionService;
+import price.tracker.resetcode.ResetCodeService;
 
 @RestController
 @RequestMapping("pricetracker/api/v1")
@@ -25,6 +29,8 @@ public class PriceTrackerController {
     private final JdbcTemplate jdbcTemplate;
     private final CoinbaseClient coinbaseClient;
     private final JWTService jwtService;
+    private final EmailService emailService;
+    private final ResetCodeService resetCodeService;
 
     @GetMapping
     private void getPrice(@RequestParam String id) {
@@ -37,7 +43,7 @@ public class PriceTrackerController {
 
     @PostMapping
     private void createPortfolio() throws Exception {
-        coinbaseClient.createPortfolio();
+        coinbaseClient.getOrders();
     }
 
     @PostMapping("/users/register")
@@ -118,12 +124,13 @@ public class PriceTrackerController {
 
             String encryptedSecret = encryptionService.encrypt(apiKey.getSecret());
 
-            String sql = "UPDATE users SET api_key_name = ?, api_key_secret = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+            String sql = "INSERT INTO api_keys (user_id, api_key_name, api_key_secret, created_at, updated_at) " +
+                    "VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)";
 
-            int rowsUpdated = jdbcTemplate.update(sql, apiKey.getName(), encryptedSecret, userId);
+            int rowsInserted = jdbcTemplate.update(sql, userId, apiKey.getName(), encryptedSecret);
 
-            if (rowsUpdated == 0) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND).body("User not found.");
+            if (rowsInserted == 0) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Failed to add API key.");
             }
 
             return ResponseEntity.ok("API key added successfully for user: " + username);
@@ -132,6 +139,39 @@ public class PriceTrackerController {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body("Invalid or missing token");
         }
+    }
+
+    @PostMapping("/users/password/reset")
+    private ResponseEntity<String> passwordReset(@RequestBody String email) {
+        if (!userEmailExists(email)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body("There are no users with the email address you specified. Please try again.");
+        }
+
+        emailService.sendPasswordResetCode(email);
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    @PostMapping("/users/password/reset/confirm")
+    private ResponseEntity<String> passwordReset(@RequestBody PasswordResetDTO passwordResetDTO) {
+        String resetCode = passwordResetDTO.getResetCode();
+        String newPassword = passwordResetDTO.getNewPassword();
+
+        String email = resetCodeService.getEmailFromResetCode(resetCode);
+
+        updateUser(email, newPassword);
+
+        return ResponseEntity.ok("Password reset successfully.");
+    }
+
+    private void updateUser(String email, String newPassword) {
+        BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+        String hashedPassword = passwordEncoder.encode(newPassword);
+
+        String query = "UPDATE users SET password_hash = ? WHERE email = ?";
+
+        jdbcTemplate.update(query, hashedPassword, email);
     }
 
     private boolean userExists(UserDTO user) {
@@ -145,6 +185,18 @@ public class PriceTrackerController {
                 sql,
                 Integer.class,
                 username);
+        return userCount != null && userCount > 0;
+    }
+
+    private boolean userEmailExists(String email) {
+        String sql = "SELECT COUNT(*) " +
+                "FROM USERS " +
+                "WHERE email = ?";
+
+        Integer userCount = jdbcTemplate.queryForObject(
+                sql,
+                Integer.class,
+                email);
         return userCount != null && userCount > 0;
     }
 
@@ -163,7 +215,10 @@ public class PriceTrackerController {
 
     private Integer getIDFromDB(UserDTO user) {
         String username = user.getUsername();
+        return getIDFromDB(username);
+    }
 
+    private Integer getIDFromDB(String username) {
         String sql = "SELECT id " +
                 "FROM USERS " +
                 "WHERE username = ?";

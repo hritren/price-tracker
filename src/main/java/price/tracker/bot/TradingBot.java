@@ -12,11 +12,13 @@ import java.util.List;
 @RequiredArgsConstructor(onConstructor = @__(@Autowired))
 public class TradingBot {
 
-    private double balance;
-    private double cashInUSD;
-    private double lastPositionEntryPrice;
-    private List<Position> openPositions = new ArrayList<>();
-
     private final CoinbaseClient coinbaseClient;
 
+    public void takeAction() {
+        try {
+            coinbaseClient.getOrders();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
 }

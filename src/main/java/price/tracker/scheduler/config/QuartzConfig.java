@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.quartz.SchedulerFactoryBean;
+import price.tracker.scheduler.job.PasswordResetCodeCleaningJob;
 import price.tracker.scheduler.job.RealTimeJob;
 
 import static org.quartz.CronScheduleBuilder.cronSchedule;
@@ -15,15 +16,15 @@ import static org.quartz.TriggerBuilder.newTrigger;
 @Configuration
 public class QuartzConfig {
 
-    private static final String REALTIME_CRON_EXPRESSION = "0 0/1 * * * ?";
+    private static final String REALTIME_CRON_EXPRESSION = "0 0/30 * * * ?";
 
     @Autowired
     private AutowiringSpringBeanJobFactory jobFactory;
 
     @Bean
     public JobDetail realTimeJobDetail() {
-        return newJob(RealTimeJob.class)
-                .withIdentity("realTime", "cryptoCurrencies")
+        return newJob(PasswordResetCodeCleaningJob.class)
+                .withIdentity("resetCode", "cleaning")
                 .storeDurably()
                 .build();
     }
@@ -31,7 +32,7 @@ public class QuartzConfig {
     @Bean
     public Trigger realTimeJobTrigger() {
         return newTrigger()
-                .withIdentity("realTimeTrigger", "cryptoCurrencies")
+                .withIdentity("resetCodeTrigger", "cleaning")
                 .withSchedule(cronSchedule(REALTIME_CRON_EXPRESSION))
                 .forJob(realTimeJobDetail())
                 .build();

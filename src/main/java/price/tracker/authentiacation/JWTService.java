@@ -16,7 +16,7 @@ public class JWTService {
 
     public String issueJWT(int id, String username) {
         long now = System.currentTimeMillis();
-        long validity = 1000L * 60 * 60 * 24; // 1 day in milliseconds
+        long validity = 1000L * 60 * 60 * 24;
 
         return Jwts.builder()
                 .setSubject(String.valueOf(id))
@@ -29,12 +29,11 @@ public class JWTService {
 
     public Claims validateJWT(String token) {
         try {
-            // Parse and validate the token
             return Jwts.parserBuilder()
                     .setSigningKey(key)
                     .build()
                     .parseClaimsJws(token)
-                    .getBody(); // Extract the claims
+                    .getBody();
         } catch (Exception e) {
             throw new RuntimeException("Invalid JWT");
         }

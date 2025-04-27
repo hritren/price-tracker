@@ -121,6 +121,10 @@
 			<version>5.8.4</version> <!-- or the latest version -->
 		</dependency>
 
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-mail</artifactId>
+		</dependency>
 
 	</dependencies>
 

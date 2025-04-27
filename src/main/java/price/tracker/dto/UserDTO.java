@@ -1,4 +1,4 @@
-package price.tracker.controller;
+package price.tracker.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
